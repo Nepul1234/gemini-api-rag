@@ -7,11 +7,14 @@ Scrapes YouTube channel videos and enables chat with transcripts using Gemini AP
 import os
 import time
 import json
+import re
 from pathlib import Path
 from dotenv import load_dotenv
 from apify_client import ApifyClient
 from google import genai
 from google.genai import types
+from youtube_transcript_api import YouTubeTranscriptApi
+from youtube_transcript_api._errors import TranscriptsDisabled, NoTranscriptFound
 
 # Load environment variables
 load_dotenv()
@@ -124,41 +127,51 @@ class YouTubeRAG:
             print("\nTrying alternative approach with transcript scraper...")
             return self._scrape_with_transcript_actor(channel_url, max_videos)
 
+    def _extract_video_id(self, video_url):
+        """Extract video ID from YouTube URL"""
+        # Handle different URL formats
+        patterns = [
+            r'(?:youtube\.com\/watch\?v=|youtu\.be\/)([^&\n?#]+)',
+            r'youtube\.com\/embed\/([^&\n?#]+)',
+            r'youtube\.com\/v\/([^&\n?#]+)'
+        ]
+
+        for pattern in patterns:
+            match = re.search(pattern, video_url)
+            if match:
+                return match.group(1)
+        return None
+
     def _get_video_transcript(self, video_url):
-        """Get transcript for a single video using Apify transcript scraper"""
+        """Get transcript for a single video using YouTube Transcript API"""
         try:
-            # Normalize video URL
-            video_url = self._normalize_url(video_url)
+            # Extract video ID from URL
+            video_id = self._extract_video_id(video_url)
 
-            # Use a dedicated transcript scraper
-            transcript_input = {
-                "startUrls": [{"url": video_url}],
-            }
+            if not video_id:
+                return None
 
-            # Try multiple transcript scrapers as fallback
-            transcript_actors = [
-                "scrapingxpert/youtube-video-to-transcript",
-                "pintostudio/youtube-transcript-scraper",
-            ]
+            # Try to get transcript (prefer English, but accept any language)
+            try:
+                # Try to get English transcript first
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id, languages=['en'])
+            except NoTranscriptFound:
+                # If no English transcript, get whatever is available
+                transcript_list = YouTubeTranscriptApi.get_transcript(video_id)
 
-            for actor_id in transcript_actors:
-                try:
-                    transcript_run = self.apify_client.actor(actor_id).call(
-                        run_input=transcript_input
-                    )
+            # Combine all transcript segments into one text
+            transcript_text = ' '.join([segment['text'] for segment in transcript_list])
 
-                    # Get the transcript from results
-                    for item in self.apify_client.dataset(transcript_run["defaultDatasetId"]).iterate_items():
-                        transcript = item.get('transcript') or item.get('text') or item.get('subtitles')
-                        if transcript:
-                            return transcript
+            return transcript_text if transcript_text else None
 
-                except Exception as actor_error:
-                    continue
-
+        except TranscriptsDisabled:
+            # Video has transcripts disabled
             return None
-
+        except NoTranscriptFound:
+            # No transcript available in any language
+            return None
         except Exception as e:
+            # Other errors
             return None
 
     def _scrape_with_transcript_actor(self, channel_url, max_videos):
