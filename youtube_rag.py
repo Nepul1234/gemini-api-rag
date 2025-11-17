@@ -36,6 +36,15 @@ class YouTubeRAG:
         self.file_search_store = None
         self.channel_name = None
 
+    def _normalize_url(self, url):
+        """Normalize URL to use HTTPS and proper format"""
+        url = url.strip()
+        if url.startswith('http://'):
+            url = url.replace('http://', 'https://')
+        elif not url.startswith('https://'):
+            url = 'https://' + url
+        return url
+
     def scrape_youtube_channel(self, channel_url, max_videos):
         """
         Scrape YouTube channel videos using Apify
@@ -47,6 +56,9 @@ class YouTubeRAG:
         Returns:
             List of video data with titles and transcripts
         """
+        # Normalize URL to HTTPS
+        channel_url = self._normalize_url(channel_url)
+
         print(f"\n🔍 Scraping {max_videos} videos from channel: {channel_url}")
         print("This may take a few minutes...\n")
 
@@ -61,7 +73,8 @@ class YouTubeRAG:
             channel_run_input = {
                 "startUrls": [{"url": channel_url}],
                 "maxResults": max_videos,
-                "searchKeywords": "",
+                "maxResultsShorts": 0,
+                "maxResultStreams": 0,
             }
 
             # Run the YouTube scraper
@@ -114,6 +127,9 @@ class YouTubeRAG:
     def _get_video_transcript(self, video_url):
         """Get transcript for a single video using Apify transcript scraper"""
         try:
+            # Normalize video URL
+            video_url = self._normalize_url(video_url)
+
             # Use a dedicated transcript scraper
             transcript_input = {
                 "startUrls": [{"url": video_url}],
