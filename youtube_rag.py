@@ -171,7 +171,8 @@ class YouTubeRAG:
             # No transcript available in any language
             return None
         except Exception as e:
-            # Other errors
+            # Other errors (print for debugging)
+            print(f"      Debug: {str(e)}")
             return None
 
     def _scrape_with_transcript_actor(self, channel_url, max_videos):
